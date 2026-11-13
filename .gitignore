@@ -1,10 +1,12 @@
 # build
 target/
 # dataset e indici: si rigenerano con scripts/build_dataset.py e bin/index.sh
-data/raw/
+# (data/raw/arxiv_cs_ir.jsonl.gz invece e' nel repository)
+data/raw/*.jsonl
 data/docs/
 index/
-# macOS / IDE
+# macOS / IDE / file di blocco di Word
+~$*
 .DS_Store
 .idea/
 *.iml

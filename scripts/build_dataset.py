@@ -13,8 +13,9 @@ Passi:
   1. download a "fette" temporali (submittedDate), perche' l'API di arXiv
      diventa inaffidabile con offset molto profondi; ogni fetta con piu' di
      MAX_SLICE risultati viene divisa a meta';
-  2. salvataggio dei record grezzi in data/raw/arxiv_cs_ir.jsonl
-     (cosi' le esecuzioni successive non riscaricano nulla);
+  2. salvataggio dei record grezzi in data/raw/arxiv_cs_ir.jsonl.gz; il file e'
+     nel repository, quindi le esecuzioni successive ricostruiscono esattamente lo
+     stesso dataset senza riscaricare nulla (arXiv aggiunge articoli ogni giorno);
   3. pulizia: deduplicazione per id arXiv e per titolo normalizzato,
      scarto di record senza titolo/abstract, normalizzazione degli spazi;
   4. scrittura dei .txt in data/docs/, di data/docs_map.tsv (file -> id arXiv)
@@ -22,8 +23,10 @@ Passi:
 
 Usa solo la libreria standard di Python.
 Uso:  python3 scripts/build_dataset.py [--out data] [--refresh]
+      (--refresh riscarica tutto da arXiv: il dataset ottenuto sara' piu' grande)
 """
 import argparse
+import gzip
 import json
 import re
 import statistics
@@ -144,7 +147,7 @@ def download(raw_path):
     for d0, d1 in years:
         fetch_slice(d0, d1, sink)
     raw_path.parent.mkdir(parents=True, exist_ok=True)
-    with raw_path.open("w", encoding="utf-8") as f:
+    with gzip.open(raw_path, "wt", encoding="utf-8") as f:
         for r in sink["records"]:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     meta = {"query": f"cat:{CATEGORY}", "downloaded_at": now.isoformat() + "Z",
@@ -246,14 +249,15 @@ def main():
     ap.add_argument("--refresh", action="store_true", help="riscarica anche se il raw esiste")
     args = ap.parse_args()
     out = Path(args.out)
-    raw = out / "raw" / "arxiv_cs_ir.jsonl"
+    raw = out / "raw" / "arxiv_cs_ir.jsonl.gz"
     if args.refresh or not raw.exists():
         print(f"Download arXiv cat:{CATEGORY} ...")
         meta = download(raw)
     else:
         meta = json.loads((raw.parent / "download_meta.json").read_text())
         print(f"Uso i record gia' scaricati in {raw}")
-    records = [json.loads(l) for l in raw.open(encoding="utf-8")]
+    with gzip.open(raw, "rt", encoding="utf-8") as f:
+        records = [json.loads(l) for l in f]
     stats = build(records, out, meta)
     print(json.dumps(stats, indent=2))
 

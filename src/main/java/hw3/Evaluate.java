@@ -181,15 +181,6 @@ public final class Evaluate {
 
     static void metrics(Path queriesFile, Path qrelsFile) throws IOException {
         Map<String, Map<String, Integer>> qrels = readQrels(qrelsFile);
-        // si usano solo i giudizi dei documenti presenti nel pool attuale, cosi' la profondita'
-        // del pool e' la stessa per tutte le query
-        Set<String> pooled = new java.util.HashSet<>();
-        for (String line : Files.readAllLines(Paths.get("eval/pool.tsv"), StandardCharsets.UTF_8)) {
-            if (line.startsWith("qid\t") || line.isBlank()) continue;
-            String[] f = line.split("\t");
-            pooled.add(f[0] + "\t" + f[1]);
-        }
-        qrels.forEach((qid, m) -> m.keySet().removeIf(file -> !pooled.contains(qid + "\t" + file)));
         Map<String, Searcher> searchers = openSearchers();
         List<QuerySpec> queries = readQueries(queriesFile);
         Map<String, List<double[]>> byRun = new LinkedHashMap<>();

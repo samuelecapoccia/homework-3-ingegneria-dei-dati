@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 
 /**
@@ -37,12 +39,20 @@ public final class Searcher implements AutoCloseable {
     /** Risultato completo di una query. */
     public record Result(HwQueryParser.Parsed parsed, long totalHits, double millis, List<Hit> hits) {}
 
+    private final Directory directory;
     private final IndexReader reader;
     private final IndexSearcher searcher;
     private final HwQueryParser parser;
 
     public Searcher(Path indexDir, String variant) throws IOException {
-        this.reader = DirectoryReader.open(FSDirectory.open(indexDir));
+        // FSDirectory.open creerebbe la directory se mancasse: prima si controlla che esista
+        Directory dir = Files.isDirectory(indexDir) ? FSDirectory.open(indexDir) : null;
+        if (dir == null || !DirectoryReader.indexExists(dir)) {
+            if (dir != null) dir.close();
+            throw new IOException("indice non trovato in " + indexDir + ": crealo prima con bin/index.sh");
+        }
+        this.directory = dir;
+        this.reader = DirectoryReader.open(directory);
         this.searcher = new IndexSearcher(reader);          // Similarity di default: BM25
         this.parser = new HwQueryParser(Analyzers.perField(variant));
     }
@@ -88,7 +98,20 @@ public final class Searcher implements AutoCloseable {
     }
 
     @Override
-    public void close() throws IOException { reader.close(); }
+    public void close() throws IOException {
+        reader.close();
+        directory.close();
+    }
+
+    /** Intero positivo da un comando della console, oppure -1 se non valido. */
+    private static int positiveInt(String s) {
+        try {
+            int v = Integer.parseInt(s.strip());
+            return v > 0 ? v : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
 
     private static void help() {
         System.out.println("""
@@ -121,7 +144,19 @@ public final class Searcher implements AutoCloseable {
             index = Paths.get("index", variant);
         }
 
-        try (Searcher s = new Searcher(index, variant)) {
+        if (k < 1) {
+            System.err.println("Errore: --k deve essere almeno 1");
+            System.exit(1);
+        }
+        Searcher opened;
+        try {
+            opened = new Searcher(index, variant);
+        } catch (IOException e) {
+            System.err.println("Errore: " + e.getMessage());
+            System.exit(1);
+            return;
+        }
+        try (Searcher s = opened) {
             if (!queries.isEmpty()) {                       // modalita' non interattiva
                 for (String q : queries) {
                     try {
@@ -146,20 +181,32 @@ public final class Searcher implements AutoCloseable {
                 if (line.isEmpty()) continue;
                 if (line.equals(":quit") || line.equals(":q") || line.equalsIgnoreCase("esci")) break;
                 if (line.equals(":help")) { help(); continue; }
-                if (line.startsWith(":k ")) {
-                    k = Integer.parseInt(line.substring(3).strip());
-                    System.out.println("Risultati mostrati: " + k);
+                if (line.startsWith(":k")) {
+                    int v = positiveInt(line.substring(2));
+                    if (v < 0) {
+                        System.out.println("Uso: :k N  (N intero maggiore di 0)");
+                    } else {
+                        k = v;
+                        System.out.println("Risultati mostrati: " + k);
+                    }
                     continue;
                 }
-                if (line.startsWith(":explain ")) {
-                    int rank = Integer.parseInt(line.substring(9).strip());
-                    if (last == null || rank < 1 || rank > last.hits().size()) {
+                if (line.startsWith(":explain")) {
+                    int rank = positiveInt(line.substring(8));
+                    if (rank < 0) {
+                        System.out.println("Uso: :explain R  (R = numero del risultato)");
+                    } else if (last == null || rank > last.hits().size()) {
                         System.out.println("Nessun risultato con quel numero.");
                     } else {
                         Hit h = last.hits().get(rank - 1);
                         Query q = last.parsed().query();
                         System.out.println(s.indexSearcher().explain(q, h.docId()));
                     }
+                    continue;
+                }
+                if (line.startsWith(":")) {
+                    System.out.println("Comando sconosciuto: " + line);
+                    help();
                     continue;
                 }
                 try {
