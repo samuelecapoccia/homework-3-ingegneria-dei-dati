@@ -1,0 +1,12 @@
+# build
+target/
+# dataset e indici: si rigenerano con scripts/build_dataset.py e bin/index.sh
+data/raw/
+data/docs/
+index/
+# macOS / IDE
+.DS_Store
+.idea/
+*.iml
+.vscode/
+__pycache__/
